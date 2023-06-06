@@ -15,6 +15,7 @@ import cv2
 import numpy as np
 import os
 import psutil
+
 THROTTLE = 12.8
 
 cams = json.load(open('all.json'))
@@ -48,7 +49,7 @@ def get_mjpeg_frame(cam):
     buf = b''
     for b in r.iter_content(65536):
         buf += b
-        print('FILL:', len(buf))
+        # print('FILL:', len(buf))
         x = buf.find(b'Content-Length:')
         if x < 0: continue
         y = buf.find(b'\r', x)
@@ -78,25 +79,37 @@ def orb_sim(img1, img2):
 
 variable = read_variable_file()
 
+run = 0
 while True:
     for c in cams:
-        cam = cams[c]
-        last_frame = cv2.imread(f"./live/{c} {variable[c] - 1}.jpg", 0)
+        try:
+            cam = cams[c]
+            if run == 0:
+                run_frame_bytes = get_mjpeg_frame(cam)
+                run_frame_pil = Image.open(io.BytesIO(run_frame_bytes))
+                run_frame = cv2.cvtColor(np.array(run_frame_pil), cv2.COLOR_RGB2BGR)
+                cv2.imwrite(f"./live/{c} {variable[c] - 1}.jpg", run_frame)
+                print("SAVED ", c, f"- {variable[c] - 1}")
+            last_frame = cv2.imread(f"./live/{c} {variable[c] - 1}.jpg", 0)
 
-        new_frame_bytes = get_mjpeg_frame(cam)
-        new_frame_pil = Image.open(io.BytesIO(new_frame_bytes))
-        new_frame = cv2.cvtColor(np.array(new_frame_pil), cv2.COLOR_RGB2BGR)
+            new_frame_bytes = get_mjpeg_frame(cam)
+            new_frame_pil = Image.open(io.BytesIO(new_frame_bytes))
+            new_frame = cv2.cvtColor(np.array(new_frame_pil), cv2.COLOR_RGB2BGR)
 
-        orb_similarity = orb_sim(last_frame, new_frame)
-        print(c, f"- {variable[c]}", "|| :", orb_similarity)
+            orb_similarity = orb_sim(last_frame, new_frame)
+            print(c, f"- {variable[c]}", "|| :", orb_similarity)
 
-        if orb_similarity < confidence and orb_similarity != 0:
-            cv2.imwrite(f"./live/{c} {variable[c]}.jpg", new_frame)
-            print("SAVED ", c, f"- {variable[c]}")
-            variable[c] += 1
+            if orb_similarity < confidence and orb_similarity != 0:
+                cv2.imwrite(f"./live/{c} {variable[c]}.jpg", new_frame)
+                print("SAVED ", c, f"- {variable[c]}")
+                variable[c] += 1
 
-        v = psutil.getloadavg()[0]
-        t = min(2.0, 0.1 + (math.exp(v * THROTTLE) / 100.0))
-        time.sleep(t)
-
+            v = psutil.getloadavg()[0]
+            t = min(2.0, 0.1 + (math.exp(v * THROTTLE) / 100.0))
+            time.sleep(t)
+        except Exception as e:
+            print('error():', repr(e))
+    run = 1
+    print("---------------------------------------")
+    # time.sleep(180)
     update_variable_file(variable)
